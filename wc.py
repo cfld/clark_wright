@@ -2,9 +2,13 @@
 
 """
     wc.py
+    
+    !! Runs pretty quickly, even on problems w/ 60k nodes
+    !! For larger problems, could avoid explicitly computing the distance matrix
 """
 
 import numpy as np
+from time import time
 from tqdm import tqdm
 from tsplib95 import parser
 from scipy.spatial.distance import cdist, pdist, squareform
@@ -37,8 +41,6 @@ dist = squareform(pdist(np.array(customers)))
 np.fill_diagonal(dist, np.inf)
 
 dist_to_depot = cdist(np.array(depot).reshape(1, -1), customers).squeeze()
-dist_to_depot = dist_to_depot
-
 
 # --
 # Compute savings
@@ -49,19 +51,32 @@ sdist_val = np.sort(dist, axis=-1)[:,:cw_neighbors]
 saving = dist_to_depot.reshape(-1, 1) + dist_to_depot[sdist_idx] - sdist_val
 # saving[saving < 0.1] = 0.1
 
-row = np.repeat(np.arange(n_customers), cw_neighbors)
-col = sdist_idx.ravel()
-val = saving.ravel()
+srcs = np.repeat(np.arange(n_customers), cw_neighbors)
+dsts = sdist_idx.ravel()
+vals = saving.ravel()
 
-p = np.argsort(-val, kind='stable')
-row, col, val = row[p], col[p], val[p]
-sav = np.column_stack([row, col, val])
+p = np.argsort(-vals, kind='stable')
+srcs, dsts, vals = srcs[p], dsts[p], vals[p]
 
-sav = sav[sav[:,0] <= sav[:,1]]
+sel = srcs < dsts
+srcs, dsts, vals = srcs[sel], dsts[sel], vals[sel]
 
-sav[:10]
+srcs = list(srcs.astype(int))
+dsts = list(dsts.astype(int))
+vals = list(vals)
+
+dist_lookup = {}
+for src, dst, d in zip(srcs, dsts, dist[(srcs, dsts)]):
+    dist_lookup[(src, dst)] = d
+    dist_lookup[(dst, src)] = d
+
+del dist
+del sdist_idx
+del sdist_val
+del saving
 
 # --
+# Clark-Wright functions
 
 def new_route(src, dst):
     global route_idx
@@ -71,20 +86,16 @@ def new_route(src, dst):
         return
     
     r = {
-        "idx"    : route_idx,
-        "nodes"  : [0, src, dst, 0],
-        "length" : 2,
-        "load"   : load,
-        "cost"   : dist_to_depot[src] + dist[src, dst] + dist_to_depot[dst],
+        "idx"   : route_idx,
+        "nodes" : [src, dst],
+        "load"  : load,
+        "cost"  : dist_to_depot[src] + dist_lookup[(src, dst)] + dist_to_depot[dst],
     }
-    
-    # countVisits += 2
     
     visited.add(src)
     visited.add(dst)
-    
-    extension.add(src)
-    extension.add(dst)
+    boundary.add(src)
+    boundary.add(dst)
     
     node2route[src] = route_idx
     node2route[dst] = route_idx
@@ -99,28 +110,25 @@ def extend_route(a, b):
     if r['load'] + demand[b] > cap:
         return
     
-    costs_add = dist[a, b] + dist_to_depot[b] - dist_to_depot[a]
+    costs_add = dist_lookup[(a, b)] + dist_to_depot[b] - dist_to_depot[a]
     if r['cost'] + costs_add > MAX_TOUR_LENGTH:
         return
     
-    if r['nodes'][1] == a:
-        r['nodes'].insert(1, b)
-    elif r['nodes'][-2] == a:
-        r['nodes'].insert(-1, b)
+    if r['nodes'][0] == a:
+        r['nodes'].insert(0, b)
+    elif r['nodes'][-1] == a:
+        r['nodes'].append(b)
     else:
         raise Exception
         
-    r['length'] += 1
-    r['load']   += demand[b]
-    r['cost']   += costs_add
+    r['load'] += demand[b]
+    r['cost'] += costs_add
     
     node2route[b] = r['idx']
     
-    extension.remove(a)
-    extension.add(b)
-    interior.add(a)
     visited.add(b)
-
+    boundary.remove(a)
+    boundary.add(b)
 
 def merge_route(src, dst):
     global route_idx
@@ -131,93 +139,82 @@ def merge_route(src, dst):
     r_src = routes[node2route[src]]
     r_dst = routes[node2route[dst]]
     
-    if r_src['load'] + r_dst['load'] > cap:
+    new_load = r_src['load'] + r_dst['load']
+    if new_load > cap:
         return
+        
+    new_cost = r_src['cost'] + r_dst['cost'] + dist_lookup[(src, dst)] - dist_to_depot[src] - dist_to_depot[dst]
     
-    cost_merge = r_src['cost'] + r_dst['cost'] + dist[src, dst] - dist_to_depot[src] - dist_to_depot[dst]
-    if cost_merge > MAX_TOUR_LENGTH:
-        return
-    
-    if r_src['nodes'][1] == src:
+    # flip to fit
+    if r_src['nodes'][0] == src:
         r_src['nodes'] = r_src['nodes'][::-1]
-    if r_dst['nodes'][1] != dst:
+    
+    if r_dst['nodes'][0] != dst:
         r_dst['nodes'] = r_dst['nodes'][::-1]
     
     r = {
-        "idx"    : route_idx,
-        "nodes"  : r_src['nodes'][:-1] + r_dst['nodes'][1:],
-        "length" : r_src['length'] + r_dst['length'],
-        "load"   : r_src['load'] + r_dst['load'],
-        "cost"   : cost_merge,
+        "idx"   : route_idx,
+        "nodes" : r_src['nodes'] + r_dst['nodes'],
+        "load"  : new_load,
+        "cost"  : new_cost,
     }
     
     del routes[node2route[src]]
     del routes[node2route[dst]]
-    for n in r['nodes'][1:-1]:
+    for n in r['nodes']:
         node2route[n] = route_idx
     
-    extension.remove(src)
-    extension.remove(dst)
-    interior.add(src)
-    interior.add(dst)
+    boundary.remove(src)
+    boundary.remove(dst)
     
     routes[route_idx] = r
     route_idx += 1
 
 
-def check_cost(r):
-    z = r['nodes'][1:-1]
-    c = sum([dist[a, b] for a,b in zip(z[:-1], z[1:])]) + dist_to_depot[z[0]] + dist_to_depot[z[-1]]
-    assert np.allclose(r['cost'], c)
-
-
-routes    = {}
-visited   = set([])
-extension = set([])
-interior  = set([])
+routes   = {}
+visited  = set([])
+boundary = set([])
 
 node2route = {}
 
 route_idx = 0
 
-for (src, dst, val) in tqdm(sav):
-    src = int(src)
-    dst = int(dst)
+for (src, dst, val) in zip(srcs, dsts, vals):
+    if (src in visited) and (src not in boundary):
+        pass
     
-    if (src in interior) or (dst in interior):
-        continue
+    elif (dst in visited) and (dst not in boundary):
+        pass
     
-    src_ext = src in extension
-    dst_ext = dst in extension
-    
-    if (not src_ext) and (not dst_ext):
-        # create a new route
+    elif (src not in visited) and (dst not in visited):
         new_route(src, dst)
-    elif (src_ext) and (not dst_ext):
-        # add point to route
+    
+    elif (src in boundary) and (dst not in visited):
         extend_route(src, dst)
-    elif (not src_ext) and (dst_ext):
-        # add point to route
+    
+    elif (dst in boundary) and (src not in visited):
         extend_route(dst, src)
-    else:
-        # merge routes
-        assert src_ext and dst_ext
+    
+    elif (src in boundary) and (dst in boundary):
         merge_route(src, dst)
+    
+    else:
+        raise Exception
 
-for r in routes.values():
-    check_cost(r)
 
-
+# fix customers that haven't been visited
 if len(visited) != n_customers:
     for n in range(n_customers):
         if n not in visited:
             routes[route_idx] = {
                 "idx"    : route_idx,
-                "nodes"  : [0, n, 0],
-                "length" : 1,
+                "nodes"  : [n],
                 "load"   : demand[n],
                 "cost"   : 2 * dist_to_depot[n],
             }
             route_idx += 1
 
-498791.99770903547
+total_cost = sum([r['cost'] for r in routes.values()])
+print(total_cost)
+
+# 498791.9977090355
