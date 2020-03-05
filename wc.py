@@ -82,6 +82,8 @@ def new_route(src, dst):
     global route_idx
     
     load = demand[src] + demand[dst]
+    cost = dist_to_depot[src] + dist_lookup[(src, dst)] + dist_to_depot[dst]
+    
     if load > cap:
         return
     
@@ -89,7 +91,7 @@ def new_route(src, dst):
         "idx"   : route_idx,
         "nodes" : [src, dst],
         "load"  : load,
-        "cost"  : dist_to_depot[src] + dist_lookup[(src, dst)] + dist_to_depot[dst],
+        "cost"  : cost,
     }
     
     visited.add(src)
@@ -107,11 +109,10 @@ def new_route(src, dst):
 def extend_route(a, b):
     r = routes[node2route[a]]
     
-    if r['load'] + demand[b] > cap:
-        return
+    new_load = r['load'] + demand[b]
+    new_cost = r['cost'] + dist_lookup[(a, b)] + dist_to_depot[b] - dist_to_depot[a]
     
-    costs_add = dist_lookup[(a, b)] + dist_to_depot[b] - dist_to_depot[a]
-    if r['cost'] + costs_add > MAX_TOUR_LENGTH:
+    if new_load > cap:
         return
     
     if r['nodes'][0] == a:
@@ -121,8 +122,8 @@ def extend_route(a, b):
     else:
         raise Exception
         
-    r['load'] += demand[b]
-    r['cost'] += costs_add
+    r['load'] = new_load
+    r['cost'] = new_cost
     
     node2route[b] = r['idx']
     
@@ -140,13 +141,13 @@ def merge_route(src, dst):
     r_dst = routes[node2route[dst]]
     
     new_load = r_src['load'] + r_dst['load']
-    if new_load > cap:
-        return
-        
     new_cost = r_src['cost'] + r_dst['cost'] + dist_lookup[(src, dst)] - dist_to_depot[src] - dist_to_depot[dst]
     
-    # flip to fit
-    if r_src['nodes'][0] == src:
+    if new_load > cap:
+        return
+    
+    # reverse direction to fit
+    if r_src['nodes'][-1] != src:
         r_src['nodes'] = r_src['nodes'][::-1]
     
     if r_dst['nodes'][0] != dst:
@@ -179,6 +180,7 @@ node2route = {}
 
 route_idx = 0
 
+t = time()
 for (src, dst, val) in zip(srcs, dsts, vals):
     if (src in visited) and (src not in boundary):
         pass
@@ -201,6 +203,7 @@ for (src, dst, val) in zip(srcs, dsts, vals):
     else:
         raise Exception
 
+print(time() - t)
 
 # fix customers that haven't been visited
 if len(visited) != n_customers:
