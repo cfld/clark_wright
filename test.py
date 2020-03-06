@@ -55,8 +55,13 @@ D_depot = cdist(depot_xy.reshape(1, -1), customers_xy).squeeze()
 srcs = np.repeat(np.arange(n_customers), args.cw_neighbors)
 dsts = I.ravel()
 
-savs = D_depot.reshape(-1, 1) + D_depot[I] - D
-savs = savs.ravel()
+def compute_savs(D, D_depot):
+    depot2a = D_depot.reshape(-1, 1)
+    depot2b = D_depot[I]
+    a2b     = D
+    return depot2a + depot2b - a2b ** 1.1
+
+savs = compute_savs(D, D_depot).ravel()
 
 dists = D.ravel()
 

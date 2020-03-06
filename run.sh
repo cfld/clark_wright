@@ -11,4 +11,8 @@ source activate cw_env
 pip install scipy
 pip install numpy
 pip install tqdm
-pip install git+https://github.com/rhgrant10/tsplib95
+pip install pandas
+pip install git+https://github.com/bkj/tsplib95
+
+pip install matplotlib
+pip install git+https://github.com/bkj/rsub

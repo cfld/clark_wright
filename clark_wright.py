@@ -1,10 +1,10 @@
 
 class CW:
-    def __init__(self, dist_lookup, dist_to_depot, demand, cap):
-        self.dist_lookup   = dist_lookup
-        self.dist_to_depot = dist_to_depot
-        self.demand        = demand
-        self.cap           = cap
+    def __init__(self, edges, D_depot, demand, cap):
+        self.edges = edges
+        self.D_depot     = D_depot
+        self.demand      = demand
+        self.cap         = cap
         
         self.visited    = set([])
         self.boundary   = set([])
@@ -14,7 +14,7 @@ class CW:
         
     def _new_route(self, src, dst):
         load = self.demand[src] + self.demand[dst]
-        cost = self.dist_to_depot[src] + self.dist_lookup[(src, dst)] + self.dist_to_depot[dst]
+        cost = self.D_depot[src] + self.edges[(src, dst)] + self.D_depot[dst]
         
         if load > self.cap:
             return
@@ -40,7 +40,7 @@ class CW:
         r = self.routes[self.node2route[a]]
         
         new_load = r['load'] + self.demand[b]
-        new_cost = r['cost'] + self.dist_lookup[(a, b)] + self.dist_to_depot[b] - self.dist_to_depot[a]
+        new_cost = r['cost'] + self.edges[(a, b)] + self.D_depot[b] - self.D_depot[a]
         
         if new_load > self.cap:
             return
@@ -66,7 +66,7 @@ class CW:
         r_dst = self.routes[self.node2route[dst]]
         
         new_load = r_src['load'] + r_dst['load']
-        new_cost = r_src['cost'] + r_dst['cost'] + self.dist_lookup[(src, dst)] - self.dist_to_depot[src] - self.dist_to_depot[dst]
+        new_cost = r_src['cost'] + r_dst['cost'] + self.edges[(src, dst)] - self.D_depot[src] - self.D_depot[dst]
         
         if new_load > self.cap:
             return
@@ -104,12 +104,12 @@ class CW:
                     "idx"    : self.route_idx,
                     "nodes"  : [n],
                     "load"   : self.demand[n],
-                    "cost"   : 2 * self.dist_to_depot[n],
+                    "cost"   : 2 * self.D_depot[n],
                 }
                 self.route_idx += 1
     
     def run(self):
-        for (src, dst) in self.dist_lookup.keys():
+        for (src, dst) in self.edges.keys():
             
             src_visited  = src in self.visited
             dst_visited  = dst in self.visited
