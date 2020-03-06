@@ -7,75 +7,86 @@
     !! For larger problems, could avoid explicitly computing the distance matrix
 """
 
+import argparse
 import numpy as np
 from time import time
 from tqdm import tqdm
 from tsplib95 import parser
 from scipy.spatial.distance import cdist, pdist, squareform
 
+from sklearn.neighbors import NearestNeighbors
+
 from clark_wright import CW
 
 # --
 # IO
 
-inpath = '/Users/bjohnson/projects/routing/RoutingSolver/instances/VRPXXL/Antwerp1.txt'
 
-prob = parser.parse(open(inpath).read())
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--inpath',       type=str, default='/Users/bjohnson/projects/routing/RoutingSolver/instances/VRPXXL/Antwerp1.txt')
+    parser.add_argument('--cw-neighbors', type=int, default=100)
+    parser.add_argument('--seed',         type=int, default=123)
+    return parser.parse_args()
 
-cap  = prob['CAPACITY']
+args = parse_args()
 
-n_customers  = prob['DIMENSION'] - 1
-cw_neighbors = 100
+prob = parser.parse(open(args.inpath).read())
 
-MAX_TOUR_LENGTH = np.inf
+cap         = prob['CAPACITY']
+n_customers = prob['DIMENSION'] - 1
+xy          = np.array(list(prob['NODE_COORD_SECTION'].values()))
+demand      = np.array(list(prob['DEMAND_SECTION'].values())).astype(int)
 
-coords = list(prob['NODE_COORD_SECTION'].values())
-depot, customers = coords[0], coords[1:]
-
-demand = list(prob['DEMAND_SECTION'].values())
-demand = demand[1:]
-demand = np.array(demand).astype(np.int)
+depot_xy     = xy[0]
+customers_xy = xy[1:]
+demand       = demand[1:]
 
 # --
 # Compute distance matrix
 
-dist = squareform(pdist(np.array(customers)))
-np.fill_diagonal(dist, np.inf)
+eps = np.random.normal(0, 1e-10, (customers_xy.shape[0], 2))
 
-dist_to_depot = cdist(np.array(depot).reshape(1, -1), customers).squeeze()
+nn = NearestNeighbors(n_neighbors=args.cw_neighbors + 1).fit(customers_xy + eps)
+
+D, I = nn.kneighbors(customers_xy + eps)
+D, I = D[:,1:], I[:,1:]
+
+D_depot = cdist(depot_xy.reshape(1, -1), customers_xy).squeeze()
 
 # --
 # Compute savings
 
-sdist_idx = np.argsort(dist, axis=-1)[:,:cw_neighbors]
-sdist_val = np.sort(dist, axis=-1)[:,:cw_neighbors]
+srcs = np.repeat(np.arange(n_customers), args.cw_neighbors)
+dsts = I.ravel()
 
-saving = dist_to_depot.reshape(-1, 1) + dist_to_depot[sdist_idx] - sdist_val
-# saving[saving < 0.1] = 0.1
+savs = D_depot.reshape(-1, 1) + D_depot[I] - D
+# savs = savs.clip(min=1e-3)
+savs = savs.ravel()
 
-srcs = np.repeat(np.arange(n_customers), cw_neighbors)
-dsts = sdist_idx.ravel()
-vals = saving.ravel()
-
-p = np.argsort(-vals, kind='stable')
-srcs, dsts, vals = srcs[p], dsts[p], vals[p]
+dists = D.ravel()
 
 sel = srcs < dsts
-srcs, dsts, vals = srcs[sel], dsts[sel], vals[sel]
+srcs, dsts, savs, dists = srcs[sel], dsts[sel], savs[sel], dists[sel]
+
+p = np.argsort(-savs, kind='stable')
+srcs, dsts, savs, dists = srcs[p], dsts[p], savs[p], dists[p]
 
 srcs = list(srcs.astype(int))
 dsts = list(dsts.astype(int))
-vals = list(vals)
 
 candidates = {}
-for src, dst, d in zip(srcs, dsts, dist[(srcs, dsts)]):
+for src, dst, d in zip(srcs, dsts, dists):
     candidates[(src, dst)] = d
     candidates[(dst, src)] = d
 
 # --
 # Run
 
-routes = CW(candidates, dist_to_depot, demand, cap).run()
+routes = CW(candidates, D_depot, demand, cap).run()
 
 total_cost = sum([r['cost'] for r in routes.values()])
 print('total_cost', total_cost)
+
+
+
