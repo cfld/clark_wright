@@ -12,7 +12,12 @@ pip install scipy
 pip install numpy
 pip install tqdm
 pip install pandas
+pip install scikit-learn
 pip install git+https://github.com/bkj/tsplib95
 
 pip install matplotlib
+pip install seaborn
 pip install git+https://github.com/bkj/rsub
+
+pip uninstall joblib
+pip install joblib

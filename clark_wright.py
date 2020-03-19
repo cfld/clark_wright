@@ -100,7 +100,7 @@ class CW:
         # fix customers that haven't been visited
         for n in range(self.demand.shape[0]):
             if n not in self.visited:
-                routes[self.route_idx] = {
+                self.routes[self.route_idx] = {
                     "idx"    : self.route_idx,
                     "nodes"  : [n],
                     "load"   : self.demand[n],
