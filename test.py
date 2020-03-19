@@ -52,40 +52,60 @@ D_depot = cdist(depot_xy.reshape(1, -1), customers_xy).squeeze()
 # --
 # Compute savings
 
-srcs = np.repeat(np.arange(n_customers), args.cw_neighbors)
-dsts = I.ravel()
+total_costs = []
+for alpha in np.arange(0.9, 1.1, 0.01):
 
-def compute_savs(D, D_depot):
-    depot2a = D_depot.reshape(-1, 1)
-    depot2b = D_depot[I]
-    a2b     = D
-    return depot2a + depot2b - a2b ** 1.1
+def f(alpha, beta):
+    def compute_savs(D, D_depot):
+        depot2a = D_depot.reshape(-1, 1)
+        depot2b = D_depot[I]
+        a2b     = D
+        return depot2a ** alpha + depot2b ** alpha - a2b ** beta
+        
+    savs = compute_savs(D, D_depot).ravel()
+    
+    srcs  = np.repeat(np.arange(n_customers), args.cw_neighbors)
+    dsts  = I.ravel()
+    dists = D.ravel()
+    
+    sel = srcs < dsts
+    srcs, dsts, savs, dists = srcs[sel], dsts[sel], savs[sel], dists[sel]
+    
+    p = np.argsort(-savs, kind='stable')
+    srcs, dsts, savs, dists = srcs[p], dsts[p], savs[p], dists[p]
+    
+    srcs = srcs.astype(int)
+    dsts = dsts.astype(int)
+    
+    edges = {}
+    for src, dst, d in zip(srcs, dsts, dists):
+        edges[(src, dst)] = d
+        edges[(dst, src)] = d
+    
+    routes = CW(edges, D_depot, demand, cap).run()
+    
+    return {
+        "alpha"      : alpha,
+        "beta"       : beta,
+        "total_cost" : sum([r['cost'] for r in routes.values()]),
+    }
 
-savs = compute_savs(D, D_depot).ravel()
+from joblib import Parallel, delayed
 
-dists = D.ravel()
+jobs = []
+for alpha in np.arange(0.9, 1.1, 0.02):
+    for beta in np.arange(0.9, 1.1, 0.02):
+        job = delayed(f)(alpha=alpha, beta=beta)
+        jobs.append(job)
 
-sel = srcs < dsts
-srcs, dsts, savs, dists = srcs[sel], dsts[sel], savs[sel], dists[sel]
+res = Parallel(backend='multiprocessing', verbose=10)(jobs)
 
-p = np.argsort(-savs, kind='stable')
-srcs, dsts, savs, dists = srcs[p], dsts[p], savs[p], dists[p]
+import pandas as pd
+df = pd.DataFrame(total_costs)
 
-srcs = list(srcs.astype(int))
-dsts = list(dsts.astype(int))
+from rsub import *
+from matplotlib import pyplot as plt
 
-edges = {}
-for src, dst, d in zip(srcs, dsts, dists):
-    edges[(src, dst)] = d
-    edges[(dst, src)] = d
-
-# --
-# Run
-
-routes = CW(edges, D_depot, demand, cap).run()
-
-total_cost = sum([r['cost'] for r in routes.values()])
-print('total_cost', total_cost)
-
-
+_ = plt.plot(df.total_cost)
+show_plot()
 
