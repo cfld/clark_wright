@@ -19,7 +19,7 @@ from clark_wright import CW
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--inpath',       type=str, default='/Users/bjohnson/projects/routing/RoutingSolver/instances/VRPXXL/Antwerp1.txt')
+    parser.add_argument('--inpath',       type=str, default='instances/VRPXXL/Antwerp1.txt')
     parser.add_argument('--cw-neighbors', type=int, default=100)
     parser.add_argument('--seed',         type=int, default=123)
     return parser.parse_args()

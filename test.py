@@ -58,12 +58,22 @@ D_depot = cdist(depot_xy.reshape(1, -1), customers_xy).squeeze()
 # --
 # Compute savings
 
+<<<<<<< HEAD
+=======
+total_costs = []
+for alpha in np.arange(0.9, 1.1, 0.01):
+
+>>>>>>> c31e2b770ba4b957699bb3b74c967a358bbe2ad2
 def f(alpha, beta):
     def compute_savs(D, D_depot):
         depot2a = D_depot.reshape(-1, 1)
         depot2b = D_depot[I]
         a2b     = D
+<<<<<<< HEAD
         return (depot2a / beta) + (depot2b / beta) - a2b ** alpha
+=======
+        return depot2a ** alpha + depot2b ** alpha - a2b ** beta
+>>>>>>> c31e2b770ba4b957699bb3b74c967a358bbe2ad2
         
     savs = compute_savs(D, D_depot).ravel()
     
@@ -93,25 +103,24 @@ def f(alpha, beta):
         "total_cost" : sum([r['cost'] for r in routes.values()]),
     }
 
-baseline = f(1, 1)['total_cost']
+
+from joblib import Parallel, delayed
 
 jobs = []
-for alpha in np.arange(0.9, 1.1, 0.01):
-    for beta in np.logspace(-1, 1, 20):
+for alpha in np.arange(0.9, 1.1, 0.02):
+    for beta in np.arange(0.9, 1.1, 0.02):
         job = delayed(f)(alpha=alpha, beta=beta)
         jobs.append(job)
 
-res = Parallel(backend='multiprocessing', n_jobs=40, verbose=10)(jobs)
+res = Parallel(backend='multiprocessing', verbose=10)(jobs)
 
-df = pd.DataFrame(res).round(2)
-df.sort_values('total_cost').head(20)
+import pandas as pd
+df = pd.DataFrame(total_costs)
 
-z = df.pivot('alpha', 'beta', 'total_cost')
-z[z > np.percentile(z, 50)] = np.percentile(z, 50)
-_ = heatmap(z)
+from rsub import *
+from matplotlib import pyplot as plt
+
+_ = plt.plot(df.total_cost)
 show_plot()
 
-_ = plt.plot(z.min(axis=0))
-_ = plt.plot(z.min(axis=1))
-_ = plt.axhline(baseline, c='red')
-show_plot()
+>>>>>>> c31e2b770ba4b957699bb3b74c967a358bbe2ad2
