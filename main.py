@@ -77,7 +77,7 @@ for src, dst, d in zip(srcs, dsts, dists):
 # --
 # Run
 
-routes = CW(edges, D_depot, demand, cap).run()
+routes = CW(D, I, D_depot, demand, cap).run()
 
 total_cost = sum([r['cost'] for r in routes.values()])
 print('total_cost', total_cost)
